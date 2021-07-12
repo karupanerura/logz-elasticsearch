@@ -29,6 +29,8 @@ func (l *LogzLogger) LogRoundTrip(req *http.Request, res *http.Response, err err
 	if res.StatusCode < 400 {
 		logz.Debugf(req.Context(), s)
 	} else if res.StatusCode < 500 {
+		logz.Infof(req.Context(), s)
+	} else {
 		logz.Warningf(req.Context(), s)
 	}
 	return nil

@@ -4,6 +4,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/elastic/go-elasticsearch/v7/estransport"
@@ -28,19 +29,58 @@ var DefaultLogFormatter LogFormatter = NewLoggerBasedLogFormatter(func(w io.Writ
 
 // LoggerBasedLogFormatter is log formatter using estransport.Logger.
 type LoggerBasedLogFormatter struct {
-	logger  estransport.Logger
-	builder strings.Builder
+	pool                sync.Pool
+	requestBodyEnabled  onceDecisiveFlag
+	responseBodyEnabled onceDecisiveFlag
 }
 
 // NewLoggerBasedLogFormatter creates a new LoggerBasedLogFormatter.
 func NewLoggerBasedLogFormatter(newLogger func(w io.Writer) estransport.Logger) *LoggerBasedLogFormatter {
-	formatter := &LoggerBasedLogFormatter{}
-	formatter.logger = newLogger(&formatter.builder)
+	formatter := &LoggerBasedLogFormatter{
+		pool: sync.Pool{
+			New: func() interface{} {
+				core := &loggerBasedLogFormatterCore{}
+				core.logger = newLogger(&core.builder)
+				return core
+			},
+		},
+	}
 	return formatter
 }
 
 // Format a new log from elasticsearch log informations.
 func (f *LoggerBasedLogFormatter) Format(req *http.Request, res *http.Response, err error, start time.Time, dur time.Duration) (string, error) {
+	core := f.pool.Get().(*loggerBasedLogFormatterCore)
+	defer f.pool.Put(core)
+	return core.format(req, res, err, start, dur)
+}
+
+// RequestBodyEnabled makes the client pass a copy of request body to the formatter.
+func (f *LoggerBasedLogFormatter) RequestBodyEnabled() bool {
+	f.requestBodyEnabled.once.Do(func() {
+		core := f.pool.Get().(*loggerBasedLogFormatterCore)
+		defer f.pool.Put(core)
+		f.requestBodyEnabled.value = core.logger.RequestBodyEnabled()
+	})
+	return f.requestBodyEnabled.value
+}
+
+// ResponseBodyEnabled makes the client pass a copy of response body to the formatter.
+func (f *LoggerBasedLogFormatter) ResponseBodyEnabled() bool {
+	f.responseBodyEnabled.once.Do(func() {
+		core := f.pool.Get().(*loggerBasedLogFormatterCore)
+		defer f.pool.Put(core)
+		f.responseBodyEnabled.value = core.logger.RequestBodyEnabled()
+	})
+	return f.responseBodyEnabled.value
+}
+
+type loggerBasedLogFormatterCore struct {
+	logger  estransport.Logger
+	builder strings.Builder
+}
+
+func (f *loggerBasedLogFormatterCore) format(req *http.Request, res *http.Response, err error, start time.Time, dur time.Duration) (string, error) {
 	defer f.builder.Reset()
 	if err := f.logger.LogRoundTrip(req, res, err, start, dur); err != nil {
 		return "", err
@@ -49,14 +89,9 @@ func (f *LoggerBasedLogFormatter) Format(req *http.Request, res *http.Response, 
 	return f.builder.String(), nil
 }
 
-// RequestBodyEnabled makes the client pass a copy of request body to the formatter.
-func (f *LoggerBasedLogFormatter) RequestBodyEnabled() bool {
-	return f.logger.RequestBodyEnabled()
-}
-
-// ResponseBodyEnabled makes the client pass a copy of response body to the formatter.
-func (f *LoggerBasedLogFormatter) ResponseBodyEnabled() bool {
-	return f.logger.ResponseBodyEnabled()
+type onceDecisiveFlag struct {
+	once  sync.Once
+	value bool
 }
 
 // PrefixedLogFormatter is ...

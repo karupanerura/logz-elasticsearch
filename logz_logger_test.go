@@ -12,24 +12,6 @@ import (
 	logzelasticsearch "github.com/karupanerura/logz-elasticsearch"
 )
 
-type mockLogFormatter struct {
-	format func(req *http.Request, res *http.Response, err error, start time.Time, dur time.Duration) (string, error)
-}
-
-var _ logzelasticsearch.LogFormatter = mockLogFormatter{}
-
-func (f mockLogFormatter) Format(req *http.Request, res *http.Response, err error, start time.Time, dur time.Duration) (string, error) {
-	return f.format(req, res, err, start, dur)
-}
-
-func (mockLogFormatter) RequestBodyEnabled() bool {
-	return false
-}
-
-func (mockLogFormatter) ResponseBodyEnabled() bool {
-	return false
-}
-
 func TestLogzLoggerSeverity(t *testing.T) {
 	logger := &logzelasticsearch.LogzLogger{
 		mockLogFormatter{

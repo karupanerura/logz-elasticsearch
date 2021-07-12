@@ -108,7 +108,7 @@ type PrefixedLogFormatter struct {
 // Format a new log by LogFormatter and add Prefix for the new log.
 func (f *PrefixedLogFormatter) Format(req *http.Request, res *http.Response, err error, start time.Time, dur time.Duration) (string, error) {
 	if s, err := f.LogFormatter.Format(req, res, err, start, dur); err != nil {
-		return "", nil
+		return "", err
 	} else {
 		return f.Prefix + s, nil
 	}

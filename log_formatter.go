@@ -57,22 +57,20 @@ func (f *LoggerBasedLogFormatter) Format(req *http.Request, res *http.Response, 
 
 // RequestBodyEnabled makes the client pass a copy of request body to the formatter.
 func (f *LoggerBasedLogFormatter) RequestBodyEnabled() bool {
-	f.requestBodyEnabled.once.Do(func() {
+	return f.requestBodyEnabled.GetOnce(func() bool {
 		core := f.pool.Get().(*loggerBasedLogFormatterCore)
 		defer f.pool.Put(core)
-		f.requestBodyEnabled.value = core.logger.RequestBodyEnabled()
+		return core.logger.RequestBodyEnabled()
 	})
-	return f.requestBodyEnabled.value
 }
 
 // ResponseBodyEnabled makes the client pass a copy of response body to the formatter.
 func (f *LoggerBasedLogFormatter) ResponseBodyEnabled() bool {
-	f.responseBodyEnabled.once.Do(func() {
+	return f.responseBodyEnabled.GetOnce(func() bool {
 		core := f.pool.Get().(*loggerBasedLogFormatterCore)
 		defer f.pool.Put(core)
-		f.responseBodyEnabled.value = core.logger.RequestBodyEnabled()
+		return core.logger.ResponseBodyEnabled()
 	})
-	return f.responseBodyEnabled.value
 }
 
 type loggerBasedLogFormatterCore struct {
@@ -92,6 +90,13 @@ func (f *loggerBasedLogFormatterCore) format(req *http.Request, res *http.Respon
 type onceDecisiveFlag struct {
 	once  sync.Once
 	value bool
+}
+
+func (f *onceDecisiveFlag) GetOnce(get func() bool) bool {
+	f.once.Do(func() {
+		f.value = get()
+	})
+	return f.value
 }
 
 // PrefixedLogFormatter is ...

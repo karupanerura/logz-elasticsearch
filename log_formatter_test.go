@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strings"
 	"testing"
 	"testing/quick"
 	"time"
@@ -12,6 +14,23 @@ import (
 	"github.com/elastic/go-elasticsearch/v7/estransport"
 	logzelasticsearch "github.com/karupanerura/logz-elasticsearch"
 )
+
+func TestDefaultLogFormatter(t *testing.T) {
+	formatter := logzelasticsearch.DefaultLogFormatter
+
+	dummyReq := &http.Request{Method: http.MethodGet, URL: &url.URL{Scheme: "http", Host: "dummy", Path: "/dummy"}}
+	dummyRes := &http.Response{StatusCode: 200}
+
+	gotMessage, err := formatter.Format(dummyReq, dummyRes, nil, time.Now(), 1234*time.Millisecond)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	t.Logf("message: %q", gotMessage)
+	if strings.HasSuffix(gotMessage, "\n") {
+		t.Errorf("unexpected message (should chomp line break): %q", gotMessage)
+	}
+}
 
 func TestLoggerBasedLogFormatterMessage(t *testing.T) {
 	f := func(msg string) bool {
@@ -29,7 +48,7 @@ func TestLoggerBasedLogFormatterMessage(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		return gotMessage == msg
+		return gotMessage == strings.TrimSuffix(msg, "\n")
 	}
 	if err := quick.Check(f, nil); err != nil {
 		t.Error(err)
@@ -57,6 +76,57 @@ func TestLoggerBasedLogFormatterError(t *testing.T) {
 	}
 	if err := quick.Check(f, nil); err != nil {
 		t.Error(err)
+	}
+}
+
+func TestLoggerBasedLogFormatterChomp(t *testing.T) {
+	testCases := []struct {
+		reqBody, resBody bool
+		expected         string
+	}{
+		{
+			reqBody:  false,
+			resBody:  false,
+			expected: "OK",
+		},
+		{
+			reqBody:  true,
+			resBody:  false,
+			expected: "OK\n",
+		},
+		{
+			reqBody:  false,
+			resBody:  true,
+			expected: "OK\n",
+		},
+		{
+			reqBody:  true,
+			resBody:  true,
+			expected: "OK\n",
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(fmt.Sprintf("%+v", tc), func(t *testing.T) {
+			formatter := logzelasticsearch.NewLoggerBasedLogFormatter(func(w io.Writer) estransport.Logger {
+				return mockElasticsearchLogger{
+					w: w,
+					format: func(req *http.Request, res *http.Response, err error, start time.Time, dur time.Duration) (string, error) {
+						return "OK\n", nil
+					},
+					requestBodyEnabled:  tc.reqBody,
+					responseBodyEnabled: tc.resBody,
+				}
+			})
+
+			gotMessage, err := formatter.Format(&http.Request{}, &http.Response{StatusCode: 200}, nil, time.Now(), 0)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if gotMessage != tc.expected {
+				t.Fatalf("unexpected message: %q", gotMessage)
+			}
+		})
 	}
 }
 

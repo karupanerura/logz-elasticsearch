@@ -41,6 +41,7 @@ func NewLoggerBasedLogFormatter(newLogger func(w io.Writer) estransport.Logger) 
 			New: func() interface{} {
 				core := &loggerBasedLogFormatterCore{}
 				core.logger = newLogger(&core.builder)
+				core.chomp = !core.logger.RequestBodyEnabled() && !core.logger.ResponseBodyEnabled()
 				return core
 			},
 		},
@@ -76,6 +77,7 @@ func (f *LoggerBasedLogFormatter) ResponseBodyEnabled() bool {
 type loggerBasedLogFormatterCore struct {
 	logger  estransport.Logger
 	builder strings.Builder
+	chomp   bool
 }
 
 func (f *loggerBasedLogFormatterCore) format(req *http.Request, res *http.Response, err error, start time.Time, dur time.Duration) (string, error) {
@@ -84,6 +86,9 @@ func (f *loggerBasedLogFormatterCore) format(req *http.Request, res *http.Respon
 		return "", err
 	}
 
+	if f.chomp {
+		return strings.TrimSuffix(f.builder.String(), "\n"), nil
+	}
 	return f.builder.String(), nil
 }
 
